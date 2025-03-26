@@ -1,7 +1,7 @@
 import torch
 import os
 import torch.distributed as dist
-from torch.distributed.tensor import DTensor
+from torch.distributed.tensor import DTensor, Replicate, Shard
 from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.fsdp import fully_shard
 import torch.nn as nn
@@ -118,14 +118,10 @@ class FSDPMuon(torch_optim.Optimizer):
                 G_prime = g_prime.full_tensor()
                 U = zeropower_via_newtonschulz5(G_prime, steps=ns_steps)
 
-                local_rows = p.to_local().shape[0]
-                start_row = self.rank * local_rows
-                end_row = (self.rank + 1) * local_rows
-                u = DTensor.from_local(
-                    U[start_row:end_row, :],
-                    device_mesh=p.data.device_mesh,
-                    placements=p.data.placements,
+                U_replicated = DTensor.from_local(
+                    U, device_mesh=p.device_mesh, placements=[Replicate()]
                 )
+                u = U_replicated.redistribute(placements=[Shard(0)])
 
                 adjusted_lr = self.adjust_lr_for_muon(lr, p.shape)
 
